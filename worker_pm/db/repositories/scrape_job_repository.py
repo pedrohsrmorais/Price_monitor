@@ -1,5 +1,3 @@
-# worker_pm/db/repositories/scrape_job_repository.py
-
 from db.connection import connection_pool
 from datetime import datetime
 
@@ -8,16 +6,21 @@ class ScrapeJobRepository:
 
     def get_by_id(self, job_id: int):
         conn = connection_pool.get_connection()
+        cursor = None
         try:
             cursor = conn.cursor(dictionary=True)
 
             query = """
                 SELECT
-                    id,
-                    search_term,
-                    marketplace_id
-                FROM scrape_jobs
-                WHERE id = %s
+                    sj.id AS job_id,
+                    sj.search_term,
+                    sj.marketplace_id,
+                    sj.max_items,
+                    m.scraper_key
+                FROM scrape_jobs sj
+                JOIN marketplaces m ON m.id = sj.marketplace_id
+                WHERE sj.id = %s
+                LIMIT 1
             """
 
             cursor.execute(query, (job_id,))
@@ -26,49 +29,35 @@ class ScrapeJobRepository:
             if not row:
                 raise ValueError(f"Job {job_id} não encontrado")
 
-            # 🔁 Mapeamento simples e seguro
-            scraper_key = self._resolve_scraper_key(row["marketplace_id"])
+            max_items = row.get("max_items") or 10  # fallback defensivo
 
             return type("Job", (), {
-                "id": row["id"],
+                "id": row["job_id"],
                 "search_term": row["search_term"],
                 "marketplace_id": row["marketplace_id"],
+                "max_items": max_items,
                 "marketplace": type("Marketplace", (), {
-                    "scraper_key": scraper_key
+                    "scraper_key": row["scraper_key"]
                 })()
             })
 
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
             conn.close()
 
-    def _resolve_scraper_key(self, marketplace_id: int) -> str:
-        # 🔥 Simplificado por enquanto
-        if marketplace_id == 1:
-            return "mercado_livre"
-
-        raise ValueError(f"Marketplace não suportado: {marketplace_id}")
-
     def mark_running(self, job_id: int):
-        self._update_status(
-            job_id,
-            status="running",
-            started_at=datetime.utcnow()
-        )
+        self._update_status(job_id, status="running", started_at=datetime.utcnow())
 
     def mark_done(self, job_id: int):
-        self._update_status(
-            job_id,
-            status="done",
-            finished_at=datetime.utcnow()
-        )
+        self._update_status(job_id, status="done", finished_at=datetime.utcnow())
 
     def mark_failed(self, job_id: int, reason: str):
         self._update_status(
             job_id,
             status="failed",
             finished_at=datetime.utcnow(),
-            error_message=reason[:1000]
+            error_message=(reason or "")[:1000]
         )
 
     def _update_status(
@@ -80,6 +69,7 @@ class ScrapeJobRepository:
         error_message=None
     ):
         conn = connection_pool.get_connection()
+        cursor = None
         try:
             cursor = conn.cursor()
 
@@ -94,7 +84,7 @@ class ScrapeJobRepository:
                 fields.append("finished_at = %s")
                 values.append(finished_at)
 
-            if error_message:
+            if error_message is not None and error_message != "":
                 fields.append("error_message = %s")
                 values.append(error_message)
 
@@ -112,5 +102,6 @@ class ScrapeJobRepository:
             print(f"📌 Job {job_id} status atualizado para '{status}'")
 
         finally:
-            cursor.close()
+            if cursor:
+                cursor.close()
             conn.close()

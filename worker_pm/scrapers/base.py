@@ -7,6 +7,8 @@ class BaseScraper(ABC):
     def __init__(self, search_term: str):
         self.search_term = search_term
 
+
+
     @abstractmethod
-    def scrape(self) -> List[Dict]:
+    def scrape(self, max_items: int) -> List[Dict]:
         pass

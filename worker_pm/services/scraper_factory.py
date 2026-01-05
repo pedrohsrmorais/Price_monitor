@@ -1,13 +1,15 @@
 # worker_pm/services/scraper_factory.py
 
 from scrapers.mercado_livre import MercadoLivreScraper
-# from scrapers.amazon import AmazonScraper
+from scrapers.magazine_luiza import MagazineLuizaScraper
+from scrapers.americanas import AmericanasScraper
 
 
 class ScraperFactory:
     SCRAPERS = {
         "mercado_livre": MercadoLivreScraper,
-        # "amazon": AmazonScraper,
+        "magazine_luiza": MagazineLuizaScraper,
+        "americanas": AmericanasScraper,
     }
 
     @staticmethod

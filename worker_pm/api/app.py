@@ -12,7 +12,8 @@ from redis_connection import redis_conn
 # -------------------------
 app = FastAPI(
     title="Scraper Enqueue API",
-    version="1.0.0"
+    version="1.1.0",
+    description="API interna para enfileiramento de jobs de scraping"
 )
 
 # -------------------------
@@ -24,8 +25,11 @@ API_KEY = os.getenv("WORKER_API_KEY")
 # -------------------------
 # Queue
 # -------------------------
-queue = Queue(QUEUE_NAME, connection=redis_conn)
-
+queue = Queue(
+    QUEUE_NAME,
+    connection=redis_conn,
+    default_timeout="30m"
+)
 
 # -------------------------
 # Healthcheck
@@ -34,21 +38,20 @@ queue = Queue(QUEUE_NAME, connection=redis_conn)
 def health():
     return {
         "status": "ok",
-        "service": "scraper-enqueue-api"
+        "service": "scraper-enqueue-api",
+        "queue": QUEUE_NAME
     }
 
-
 # -------------------------
-# Ping (TESTE DE CONEXÃO)
+# Ping (debug interno)
 # -------------------------
 @app.get("/ping", status_code=status.HTTP_200_OK)
 def ping():
     print("🔔 PING recebido do backend Node.js")
     return {
         "pong": True,
-        "message": "FastAPI está acessível"
+        "message": "FastAPI worker acessível"
     }
-
 
 # -------------------------
 # Enqueue endpoint
@@ -58,9 +61,9 @@ def enqueue_job(
     job_id: int,
     x_api_key: Optional[str] = Header(default=None)
 ):
-    print(f"📥 Requisição /enqueue recebida | job_id={job_id}")
+    print(f"📥 Enqueue solicitado | job_id={job_id}")
 
-    # 🔐 Proteção simples entre serviços
+    # 🔐 Proteção entre serviços
     if API_KEY:
         if not x_api_key or x_api_key != API_KEY:
             print("❌ API KEY inválida ou ausente")
@@ -70,7 +73,6 @@ def enqueue_job(
             )
 
     try:
-        print("Tentando enfileirar job...")
         queue.enqueue(
             "tasks.run_scraper",
             job_id,
@@ -78,7 +80,6 @@ def enqueue_job(
             result_ttl=0,
             failure_ttl=86400
         )
-
 
         print(f"✅ Job {job_id} enfileirado com sucesso")
 
@@ -92,5 +93,5 @@ def enqueue_job(
         print(f"🔥 Erro ao enfileirar job {job_id}: {exc}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(exc)
+            detail="Erro ao enfileirar job"
         )

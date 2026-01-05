@@ -5,15 +5,14 @@ from urllib.parse import quote_plus, urlencode
 from bs4 import BeautifulSoup
 from datetime import datetime
 
-# Ajuste conforme sua estrutura de pastas
 try:
     from scrapers.base import BaseScraper
 except ImportError:
     from base import BaseScraper
 
 
-class MercadoLivreScraper(BaseScraper):
-    BASE_URL = "https://lista.mercadolivre.com.br"
+class MagazineLuizaScraper(BaseScraper):
+    BASE_URL = "https://www.magazineluiza.com.br"
 
 
     HEADERS = {
@@ -31,19 +30,15 @@ class MercadoLivreScraper(BaseScraper):
     # Utils
     # -------------------------------------------------
     def _build_google_translate_url(self, target_url: str) -> str:
-        params = {
-            "sl": "auto",
-            "tl": "pt",
-            "u": target_url,
-        }
+        params = {"sl": "auto", "tl": "pt", "u": target_url}
         return "https://translate.google.com/translate?" + urlencode(params)
 
     def _parse_price(self, text: Optional[str]) -> Optional[float]:
         if not text:
             return None
 
-        t = text.replace("R$", "").strip()
-        t = re.sub(r"[^\d\.,]", "", t)
+        t = text.replace("R$", "").replace("\xa0", " ").strip()
+        t = re.sub(r"[^\d,\.]", "", t)
 
         if "," in t:
             t = t.replace(".", "").replace(",", ".")
@@ -59,7 +54,7 @@ class MercadoLivreScraper(BaseScraper):
         if not img_el:
             return None
 
-        for attr in ("data-src", "src", "srcset"):
+        for attr in ("src", "data-src", "srcset"):
             val = img_el.get(attr)
             if val and not val.startswith("data:image"):
                 if attr == "srcset":
@@ -71,47 +66,39 @@ class MercadoLivreScraper(BaseScraper):
     # Main
     # -------------------------------------------------
     def scrape(self, max_items: int) -> List[Dict]:
+
         query = quote_plus(self.search_term.strip().lower())
-        original_url = f"{self.BASE_URL}/?q={query}"
+        original_url = f"{self.BASE_URL}/busca/{query}/"
         proxy_url = self._build_google_translate_url(original_url)
 
-        print(f"\n🔍 [ML] Buscando: '{self.search_term}'")
-
+        print(f"\n🔍 [MAGALU] Buscando: '{self.search_term}'")
+       
   
 
         try:
             resp = requests.get(proxy_url, headers=self.HEADERS, timeout=40)
             resp.raise_for_status()
         except Exception as e:
-            print(f"❌ [ML] Erro de conexão: {e}")
+            print(f"❌ [MAGALU] Erro de conexão: {e}")
             return []
 
+    
 
-       
-        html_lower = resp.text.lower()
-        if "captcha" in html_lower:
-            print("🚫 [ML] CAPTCHA detectado")
-            return []
+        
+
+        if "captcha" in resp.text.lower():
+            print("🚫 [MAGALU] CAPTCHA detectado")
+            
 
         soup = BeautifulSoup(resp.text, "html.parser")
 
-        # mesmos seletores que você já usava
-        selectors = [
-            "div.poly-card",
-            "li.ui-search-layout__item",
-            "div.ui-search-result__wrapper",
-        ]
-
-        cards = []
-        for selector in selectors:
-            cards = soup.select(selector)
-            if cards:
-                print(f"🎯 [ML] Seletor OK: '{selector}' ({len(cards)})")
-                break
+        # Card real da Magalu
+        cards = soup.select("div[data-testid='product-card-content']")
 
         if not cards:
-            print("⚠️ [ML] Nenhum card encontrado")
+            print("⚠️ [MAGALU] Nenhum card encontrado")
             return []
+
 
         products: List[Dict] = []
 
@@ -119,20 +106,36 @@ class MercadoLivreScraper(BaseScraper):
             if len(products) >= max_items:
                 break
 
-            title_el = (
-                card.select_one("a.poly-component__title")
-                or card.select_one("h2.ui-search-item__title")
-            )
-            price_el = card.select_one("span.andes-money-amount")
-            img_el = card.select_one("img")
-
+            # Título
+            title_el = card.select_one("h2[data-testid='product-title']")
             if not title_el:
                 continue
 
+            # Link (é o PAI do card)
+            link_el = card.find_parent("a", href=True)
+            if not link_el:
+                if idx == 1:
+                    print("⚠️ [MAGALU] Link não encontrado no card")
+                continue
+
+            # Preço (fallbacks reais)
+            price_el = (
+                card.select_one("p[data-testid='price-value']")
+                or card.select_one("p[data-testid='price-default']")
+            )
+
+            # Imagem
+            img_el = card.select_one("img[data-testid='image']")
+
             name = title_el.get_text(strip=True)
-            product_url = title_el.get("href")
+
+            product_url = link_el.get("href")
+            if product_url and product_url.startswith("/"):
+                product_url = self.BASE_URL + product_url
+
             price_text = price_el.get_text(strip=True) if price_el else None
             image_url = self._extract_image_url(img_el)
+
 
 
             products.append(
@@ -145,5 +148,4 @@ class MercadoLivreScraper(BaseScraper):
                 }
             )
 
-        print(f"🏁 [ML] Total coletado: {len(products)} produtos\n")
         return products

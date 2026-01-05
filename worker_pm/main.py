@@ -14,7 +14,7 @@ load_dotenv()
 
 from rq import Worker, Queue
 from redis_connection import redis_conn
-from db.connection import connection_pool  # força init
+from db.connection import connection_pool  
 import tasks  # necessário para o RQ encontrar as tasks
 
 
@@ -28,7 +28,7 @@ def main():
 
     worker = Worker(
         [queue],
-        connection=redis_conn,   # 👈 AQUI
+        connection=redis_conn, 
         name="price-monitor-worker"
     )
 

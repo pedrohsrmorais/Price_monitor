@@ -11,3 +11,6 @@ rq==1.16.2
 # HTTP API (enqueue service)
 fastapi==0.115.0
 uvicorn[standard]==0.30.6
+
+# Scraping (browser automation)
+playwright==1.42.0

@@ -13,3 +13,4 @@ env
 __pycache__
 *.pyc
 node_modules
+worker_pm_v1
